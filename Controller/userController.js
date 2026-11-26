@@ -83,38 +83,38 @@ async function dosignup(req,resp){
        console.log("body Recieved")
     //  logger.info("Signup request received");
        const {email,password,userType} = req.body;
-       const hashedPassword = await bcrypt.hash(password, 10)
+       
    const token = crypto.randomBytes(32).toString("hex");
       const check=await userColRef.findOne({email:email})
-
-   if (check) {
-    if (check.isVerified === true) {
-        console.log("verified");
-        return resp.json({ message: "Already Registered" });
-    } else {
-        console.log("Not verified - Updating existing record");
-        // FIX: Instead of delete + create, just update the existing unverified account
-        await userColRef.updateOne(
-            { email: email },
-            { 
-                $set: { 
-                    password: hashedPassword, 
-                    userType: userType, 
-                    verifyToken: token 
-                } 
-            }
-        );
+      if(check){
+      if(check.isVerified==true){
+        console.log("verified")
+        return resp.json({
+    message:"Already Registered"
+  });
+      }
+      
+      else{
+        console.log("Not verified")
+          await userColRef.findOneAndDelete({email:email})
+          const user = await userColRef.create({
+    email,
+    password,
+    userType,
+    verifyToken: token
+  });
+      }
     }
-} else {
-    console.log("empty - Creating new record");
-    await userColRef.create({
-        email,
-        password: hashedPassword,
-        userType,
-        verifyToken: token
-    });
-}
-
+    if(check==null){
+      console.log("empty")
+         const user = await userColRef.create({
+    email,
+    password,
+    userType,
+    verifyToken: token
+  });
+    }
+        
   console.log("here  *********")
     const verifyLink = `https://medicare-server4.onrender.com/user/verify/${token}`;
                 let transporter = nodemailer.createTransport({
@@ -319,32 +319,18 @@ async function verifyEmail(req,res){
 
 };
 
-async function dologin(req,resp){
+function dologin(req,resp){
        console.log(req.body)
-       userColRef.findOne({email:req.body.email}).then(async(docu)=>{
+       userColRef.findOne({email:req.body.email,password:req.body.password}).then((docu)=>{
          if(docu!=null){
           console.log("find =====>")
-          const isMatch = await bcrypt.compare(req.body.password, docu.password);
-          if(isMatch===true){
-          const isProduction = process.env.NODE_ENV === "production";
-             let jsontoken=jwt.sign({email:req.body.email},process.env.SEC_KEY,{expiresIn:"5m"})
-             const refreshToken = jwt.sign({ email:req.body.email }, process.env.SEC_KEY, { expiresIn: "7d" });
-               resp.cookie("token",jsontoken,{httpOnly:true,sameSite:isProduction ? "none" : "lax",
-                secure:isProduction,maxAge: 5 * 60 * 1000 })
-                resp.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000 
-    });
+             let jsontoken=jwt.sign({email:req.body.email},process.env.SEC_KEY,{expiresIn:"1h"})
            resp.json({status:true,msg:"Login successfully",obj:docu,token:jsontoken})
-         } 
-          else{
+         }
+         else{
            console.log("not find  =====>")
               resp.json({status:false,msg:"Invalid Id and Password"});
-         }   
-        }
-        
+         }
        }).catch((err)=>{
          console.log("error =====>")
             resp.json({status:false,msg:err.message});
@@ -1182,96 +1168,6 @@ async function requestmedicine(req, resp) {
     });
   }
 }
-// check token
-  //  CORRECT BACKEND CODE (Change it to this)
-function checktoken(req, res){
-    const accessToken = req.cookies.token;
-
-    // 1. If the token doesn't exist in the cookies
-    if (!accessToken) {
-        console.log("No token found, sending 401...");
-        return res.status(401).json({ status: false, msg: "Access token missing" });
-    }
-
-    // 2. If the token exists, verify it
-    jwt.verify(accessToken, process.env.SEC_KEY, (err, decoded) => {
-        if (err) {
-            console.log("Token expired or invalid, sending 401...");
-            // This 401 status forces the frontend interceptor to wake up!
-            return res.status(401).json({ status: false, msg: "Access token expired" });
-        }
-
-        // Token is valid! Send a normal 200 response
-        res.json({ status: true, msg: "Token is valid!", email: decoded.email });
-    });
-};
-       // refresh token 
-       // Your brand new Refresh Token endpoint
-  function refresh(req, res){
-    // 1. Grab the refreshToken from the incoming cookies
-    const refreshToken = req.cookies.refreshToken;
-
-    // 2. If the refresh token cookie doesn't exist, reject immediately
-    if (!refreshToken) {
-        return res.status(401).json({ status: false, msg: "No refresh token found. Please log in again." });
-    }
-
-    // 3. Verify that the refresh token hasn't been tampered with or expired
-    // Make sure to use the same REFRESH_SEC_KEY you used during login!
-    jwt.verify(refreshToken, process.env.SEC_KEY || "fallback_refresh_key", (err, decoded) => {
-        if (err) {
-            // If verification fails (e.g., token is older than 7 days), return a 403 Forbidden
-            return res.status(403).json({ status: false, msg: "Invalid or expired refresh token." });
-        }
-
-        // 4. If valid, 'decoded' contains the data you packed inside (like the user's email)
-        // Generate a BRAND NEW short-lived Access Token
-        const newAccessToken = jwt.sign(
-            { email: decoded.email }, 
-            process.env.SEC_KEY, 
-            { expiresIn: "15m" } // Lasts another 15 minutes
-        );
-
-        const isProduction = process.env.NODE_ENV === "production";
-
-        // 5. Overwrite the old "token" cookie with the brand new access token
-        res.cookie("token", newAccessToken, {
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: isProduction ? "none" : "lax",
-            maxAge: 15 * 60 * 1000 // 15 minutes
-        });
-
-        // 6. Send a happy response back to the Axios interceptor
-        res.json({ status: true, msg: "Access token extended successfully!" });
-    });
-};
-    function messages(req,resp){
-      console.log("*********************** messages")
-        AvailMediColRef.find().then((docu)=>{
-                  // let jsontoken=jwt.sign({email:req.body.email},process.env.SEC_KEY,{expiresIn:"1m"})
-                   resp.json({status:true,msg:"Record saved",obj:docu});
-                 }).catch((err)=>{
-                   resp.json({status:false,msg:err.message})
-                 })
-    }
-   // Express Route: Get unread notification counts
-async function notifications(req, res){
-  try {
-    const { userEmail } = req.params;
-
-    // Count messages where the user is the receiver and seen is false
-    const unreadCount = await Message.countDocuments({
-      receiverEmail: userEmail.toLowerCase(),
-      seen: false
-    });
-
-    res.json({ success: true, count: unreadCount });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
 module.exports={dosignup,verifyEmail,dologin,DonerForm,DonerUpdate,donerfind,doavailmedi,doupdateAvailMedi,findtodo,
   dodeletemedi,needyrForm,needyupdate,picreader,medifinder,fetchFinderData,dochangePassword,doAvailEquipment,
-  fetchcities,fetchequipmentData,getcontact,getotp,doverify,validate,order,ordervalidate,registerUser,googlelogin,requestmedicine,
-   checktoken,refresh,messages,notifications}
+  fetchcities,fetchequipmentData,getcontact,getotp,doverify,validate,order,ordervalidate,registerUser,googlelogin,requestmedicine}
