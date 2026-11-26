@@ -31,5 +31,9 @@ appRouter.post("/order",obj.order);
 appRouter.post("/ordervalidate",obj.ordervalidate);
 appRouter.post("/google-login",obj.googlelogin);
 appRouter.post("/requestmedicine",obj.requestmedicine);
+appRouter.post("/checktoken",obj.checktoken);
+appRouter.post("/refresh",obj.refresh);
+appRouter.post("/messages",obj.messages);
+appRouter.post("/notifications",obj.notifications);
 
 module.exports=appRouter;
